@@ -2044,11 +2044,11 @@ class FacilityUpdates(AbstractBase):
         validated_data['updated_by'] = self.updated_by.id
         for hr in humanresources_to_add:
             try:
-                FacilitySpecialist.objects.get(
-                    speciality_id=hr.get('speciality'), facility=self.facility)
+                results = FacilitySpecialist.objects.filter(speciality_id=hr.get('speciality'), facility=self.facility).count()
+                if results < 1:
+                    create_facility_humanresources(self.facility, hr, validated_data)
             except FacilitySpecialist.DoesNotExist:
-                create_facility_humanresources(
-                    self.facility, hr, validated_data)
+                create_facility_humanresources(self.facility, hr, validated_data)
 
     def update_facility_infrastructure(self):
         from facilities.utils import create_facility_infrastructure
@@ -2060,8 +2060,8 @@ class FacilityUpdates(AbstractBase):
         validated_data['updated_by'] = self.updated_by.id
         for infra in infrastructure_to_add:
             try:
-                FacilityInfrastructure.objects.get(
-                    infrastructure_id=infra.get('infrastructure'), facility=self.facility)
+                if FacilityInfrastructure.objects.filter(infrastructure_id=infra.get('infrastructure'), facility=self.facility).count() < 1:
+                    create_facility_infrastructure(self.facility, infra, validated_data)
             except FacilityInfrastructure.DoesNotExist:
                 create_facility_infrastructure(
                     self.facility, infra, validated_data)
