@@ -1317,6 +1317,8 @@ class Facility(SequenceMixin, AbstractBase):
             1. Coordinates
             2. Contacts and officers
             3. Services
+            4. HR
+            5. Infrastructure
 
         This will be used to determine if the facility should have an MFL Code.
         The incomplete facilities should not have MFL codes
@@ -1330,11 +1332,9 @@ class Facility(SequenceMixin, AbstractBase):
 
         if len(self.facility_services.all()) == 0:
             in_complete_data.append('services')
-        return ", ".join(in_complete_data)
 
         if len(self.facility_infrastructure.all()) == 0:
             in_complete_data.append('infrastructure')
-        return ", ".join(in_complete_data)
 
         if len(self.facility_humanresources.all()) == 0:
             in_complete_data.append('humanresources')
