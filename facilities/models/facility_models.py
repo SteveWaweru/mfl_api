@@ -508,6 +508,32 @@ class FacilityStatus(AbstractBase):
         verbose_name_plural = 'facility statuses'
 
 
+@reversion.register
+@encoding.python_2_unicode_compatible
+class FacilityAdmissionStatus(AbstractBase):
+
+    """
+    Facility Admission Status covers the following elements:
+    whether the facility
+        1. Not admitting patients
+        2. Admitting maternity patients only
+        3. Admitting maternity & general patients
+    """
+    name = models.CharField(
+        max_length=100, unique=True,
+        help_text="A short name representing the admission status"
+        " e.g NOT ADMITTING")
+    description = models.TextField(
+        null=True, blank=True,
+        help_text="A short explanation of what the status entails.")
+
+    def __str__(self):
+        return self.name
+
+    class Meta(AbstractBase.Meta):
+        verbose_name_plural = 'facility admission statuses'
+
+
 @reversion.register(follow=['preceding', ])
 @encoding.python_2_unicode_compatible
 class FacilityType(AbstractBase):
@@ -1070,6 +1096,11 @@ class Facility(SequenceMixin, AbstractBase):
         help_text="Indicates whether the facility"
         "has been approved to operate, is operating, is temporarily"
         "non-operational, or is closed down")
+    admission_status = models.ForeignKey(
+        FacilityAdmissionStatus, null=True, blank=True,
+        on_delete=models.PROTECT,
+        help_text="Indicates whether the facility"
+        "admits patients, and the admission types offered")
     accredited_lab_iso_15189 = models.BooleanField(
         default=False,
         help_text="Indicate if facility is accredited Lab ISO 15189")

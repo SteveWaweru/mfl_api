@@ -21,6 +21,7 @@ from ..models import (
 )
 from facilities.models import(
     FacilityStatus,
+    FacilityAdmissionStatus,
     ServiceCategory,
     FacilityType,
     OwnerType,
@@ -659,6 +660,7 @@ class FilteringSummariesView(views.APIView):
             'constituency': (Constituency, ('id', 'name', 'county', )),
             'ward': (Ward, ('id', 'name', 'constituency', 'sub_county')),
             'operation_status': (FacilityStatus, ('id', 'name')),
+            'admission_status': (FacilityAdmissionStatus, ('id', 'name')),
             'chu_status': (chu_models.Status, ('id', 'name', )),
             'service_category': (ServiceCategory, ('id', 'name')),
             'owner_type': (OwnerType, ('id', 'name')),

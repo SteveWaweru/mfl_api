@@ -23,6 +23,7 @@ from ..models import (
     Officer,
     OfficerContact,
     FacilityStatus,
+    FacilityAdmissionStatus,
     FacilityType,
     RegulatingBody,
     RegulationStatus,
@@ -259,6 +260,13 @@ class FacilityStatusSerializer(
 
     class Meta(AbstractFieldsMixin.Meta):
         model = FacilityStatus
+
+
+class FacilityAdmissionStatusSerializer(
+        AbstractFieldsMixin, serializers.ModelSerializer):
+
+    class Meta(AbstractFieldsMixin.Meta):
+        model = FacilityAdmissionStatus
 
 
 class RegulatingBodySerializer(
