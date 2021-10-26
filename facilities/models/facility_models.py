@@ -1317,6 +1317,8 @@ class Facility(SequenceMixin, AbstractBase):
             1. Coordinates
             2. Contacts and officers
             3. Services
+            4. HR
+            5. Infrastructure
 
         This will be used to determine if the facility should have an MFL Code.
         The incomplete facilities should not have MFL codes
@@ -1330,11 +1332,9 @@ class Facility(SequenceMixin, AbstractBase):
 
         if len(self.facility_services.all()) == 0:
             in_complete_data.append('services')
-        return ", ".join(in_complete_data)
 
         if len(self.facility_infrastructure.all()) == 0:
             in_complete_data.append('infrastructure')
-        return ", ".join(in_complete_data)
 
         if len(self.facility_humanresources.all()) == 0:
             in_complete_data.append('humanresources')
@@ -2044,11 +2044,11 @@ class FacilityUpdates(AbstractBase):
         validated_data['updated_by'] = self.updated_by.id
         for hr in humanresources_to_add:
             try:
-                FacilitySpecialist.objects.get(
-                    speciality_id=hr.get('speciality'), facility=self.facility)
+                results = FacilitySpecialist.objects.filter(speciality_id=hr.get('speciality'), facility=self.facility).count()
+                if results < 1:
+                    create_facility_humanresources(self.facility, hr, validated_data)
             except FacilitySpecialist.DoesNotExist:
-                create_facility_humanresources(
-                    self.facility, hr, validated_data)
+                create_facility_humanresources(self.facility, hr, validated_data)
 
     def update_facility_infrastructure(self):
         from facilities.utils import create_facility_infrastructure
@@ -2060,8 +2060,8 @@ class FacilityUpdates(AbstractBase):
         validated_data['updated_by'] = self.updated_by.id
         for infra in infrastructure_to_add:
             try:
-                FacilityInfrastructure.objects.get(
-                    infrastructure_id=infra.get('infrastructure'), facility=self.facility)
+                if FacilityInfrastructure.objects.filter(infrastructure_id=infra.get('infrastructure'), facility=self.facility).count() < 1:
+                    create_facility_infrastructure(self.facility, infra, validated_data)
             except FacilityInfrastructure.DoesNotExist:
                 create_facility_infrastructure(
                     self.facility, infra, validated_data)
