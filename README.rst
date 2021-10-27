@@ -26,16 +26,11 @@ Master Facility List API
 
 This is the API server for the second generation Kenyan Ministry of Health Master Facility List ( MFL ).
 
-The "home" of the canonical / production version is at http://ehealth.or.ke/facilities/ . The latest documentation can always be found at http://mfl-api-docs.readthedocs.org/en/latest/ . That includes installation instructions, guidance for contributors and API documentation.
+The "home" of the canonical / production version is at http://kmhfl.health.go.ke/ . The latest documentation can always be found at http://mfl-api-docs.readthedocs.org/en/latest/ . That includes installation instructions, guidance for contributors and API documentation.
 
 
 Credits
 --------
-Developed by `Savannah Informatics Limited`_ | info@savannahinformatics.com
-
-.. _Savannah Informatics Limited: http://savannahinformatics.com/
-
-
-Maintained by `HealthIT | UoN`_ | swaweru@healthit.uonbi.ac.ke
+Maintained by `HealthIT | UoN`_ | support@healthit.uonbi.ac.ke
 
 .. _HealthIT | UoN: http://healthit.uonbi.ac.ke/
