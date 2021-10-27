@@ -8,7 +8,6 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 
 from common.models import Contact, ContactType
-from facilities.models.facility_models import FacilityAdmissionStatus
 from users.models import MflUser
 
 from common.serializers import (
@@ -93,7 +92,6 @@ class FacilityExportExcelMaterialViewSerializer(serializers.ModelSerializer):
             "owner",
             "operation_status",
             "operation_status_name",
-            "admission_status_name",
             "open_whole_day",
             "open_public_holidays",
             "open_weekends",
@@ -261,13 +259,6 @@ class FacilityStatusSerializer(
 
     class Meta(AbstractFieldsMixin.Meta):
         model = FacilityStatus
-
-
-class FacilityAdmissionStatusSerializer(
-        AbstractFieldsMixin, serializers.ModelSerializer):
-
-    class Meta(AbstractFieldsMixin.Meta):
-        model = FacilityAdmissionStatus
 
 
 class RegulatingBodySerializer(
@@ -450,7 +441,6 @@ class FacilitySerializer(
     owner_type = serializers.CharField(
         read_only=True, source='owner.owner_type.pk')
     operation_status_name = serializers.CharField(read_only=True)
-    admission_status_name = serializers.CharField(read_only=True)
 
     county = serializers.ReadOnlyField(source='ward.sub_county.county.name')
 
@@ -466,8 +456,6 @@ class FacilitySerializer(
         source="get_facility_infrastructure")
     facility_humanresources = serializers.ReadOnlyField(
         source="get_facility_humanresources")
-    facility_specialities = serializers.ReadOnlyField(
-        source="get_facility_specialities")
     is_approved = serializers.ReadOnlyField()
     has_edits = serializers.ReadOnlyField()
     latest_update = serializers.ReadOnlyField()
@@ -557,7 +545,7 @@ class FacilityListSerializer(FacilitySerializer):
         fields = [
             'code', 'name', 'id', 'county', 'constituency',
             'facility_type_name', 'owner_name', 'owner_type_name',
-            'regulatory_status_name', 'ward', 'operation_status_name', 'admission_status_name',
+            'regulatory_status_name', 'ward', 'operation_status_name',
             'ward_name', 'is_published', "is_approved", "has_edits",
             "rejected"
         ]
