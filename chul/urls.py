@@ -48,6 +48,10 @@ urlpatterns = (
     url(r'^units/(?P<pk>[^/]+)/$',
         views.CommunityHealthUnitDetailView.as_view(),
         name='community_health_unit_detail'),
+    url(r'^summary/$',
+        views.CommunityHealthUnitSummaryView.as_view(),
+        name='community_health_unit_summary'),
+
 
     url(r'^chu_ratings/$',
         views.CHURatingListView.as_view(), name='chu_ratings'),

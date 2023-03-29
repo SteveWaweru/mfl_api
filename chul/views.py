@@ -1,7 +1,11 @@
+from django.http import JsonResponse
 from django.template import loader, Context
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from rest_framework import generics
+from django.db.models import Count
+from django.db import connection
+from django.apps import apps
 from common.views import AuditableDetailViewMixin, DownloadPDFMixin
 from common.models import UserConstituency, UserCounty, UserSubCounty
 from .models import (
@@ -17,6 +21,7 @@ from .models import (
 
 from .serializers import (
     CommunityHealthUnitSerializer,
+    ChulSummarySerializer,
     CommunityHealthWorkerSerializer,
     CommunityHealthWorkerContactSerializer,
     StatusSerializer,
@@ -209,6 +214,7 @@ class CommunityHealthUnitContactListView(generics.ListCreateAPIView):
     ordering_fields = ('health_unit', 'contact', )
 
 
+
 class CommunityHealthUnitContactDetailView(
         AuditableDetailViewMixin,
         generics.RetrieveUpdateDestroyAPIView):
@@ -247,6 +253,20 @@ class CommunityHealthUnitDetailView(
     """
     queryset = CommunityHealthUnit.objects.all()
     serializer_class = CommunityHealthUnitSerializer
+
+class CommunityHealthUnitSummaryView(generics.ListAPIView):
+    def get_queryset(self):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT chul_status.name, COUNT(chul_communityhealthunit.status_id) As counts FROM chul_communityhealthunit INNER JOIN chul_status ON chul_communityhealthunit.status_id = chul_status.id GROUP BY chul_status.name")
+            rows = cursor.fetchall()
+            return rows
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        data = []
+        for row in queryset:
+            data.append({"name": row[0], "count": row[1]})
+        return JsonResponse(data, safe=False)
 
 
 class CommunityHealthWorkerListView(generics.ListCreateAPIView):
@@ -345,6 +365,7 @@ class ChuUpdateBufferListView(
     serializer_class = ChuUpdateBufferSerializer
     filter_class = ChuUpdateBufferFilter
     ordering_fields = ('health_unit', )
+    # print(queryset)
 
 
 class ChuUpdateBufferDetailView(
