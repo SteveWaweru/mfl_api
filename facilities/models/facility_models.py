@@ -161,7 +161,7 @@ class DhisAuth(ApiAuthentication):
             # )
 
     def get_parent_id(self, ward_id):
-        print self.session_store[self.oauth2_token_variable_name]
+        print (self.session_store[self.oauth2_token_variable_name])
         r = requests.get(
             settings.DHIS_ENDPOINT+"api/organisationUnits.json",
             auth=(settings.DHIS_USERNAME, settings.DHIS_PASSWORD),
@@ -1046,6 +1046,10 @@ class Facility(SequenceMixin, AbstractBase):
         default=0,
         help_text="The number of High Dependency Units (HDU) beds"
         " that a facility has e.g 0")
+    number_of_inpatient_beds = models.PositiveIntegerField(
+        default=0,
+        help_text="The number of General In-patient beds"
+        " that a facility has e.g 0")
     # <Additions>
     number_of_maternity_beds = models.PositiveIntegerField(
         default=0,
@@ -1224,8 +1228,10 @@ class Facility(SequenceMixin, AbstractBase):
             kmhfl_dhis2_facility_type_mapping = {
                 "20b86171-0c16-47e1-9277-5e773d485c33": "YQK9pleIoeB",
                 "5eb392ac-d10a-40c9-b525-53dac866ef6c": "lTrpyOiOcM6",
+                "8949eeb0-40b1-43d4-a38d-5d4933dc209f": "lTrpyOiOcM6",
                 "ccc1600e-9a24-499f-889f-bd9f0bdc4b95": "YQK9pleIoeB",
                 "d8d741b1-21c5-45c8-86d0-a2094bf9bda6": "YQK9pleIoeB",
+                "85f2099b-a2f8-49f4-9798-0cb48c0875ff": "YQK9pleIoeB",
                 "869118aa-0e97-4f47-b6b7-1f295d109c8f": "YQK9pleIoeB",
                 "a8af148f-b1b6-4eed-9d86-07d4f3135229": "YQK9pleIoeB",
                 "74755372-99ba-4b70-bca8-a583f03990bc": "lTrpyOiOcM6",
@@ -1245,6 +1251,7 @@ class Facility(SequenceMixin, AbstractBase):
                 "188551b7-4f22-4fc4-b07b-f9c9aeeea872": "rhKJPLo27x7",
                 "e5923a48-6b22-42c4-a4e6-6c5a5e8e0b0e": "YQK9pleIoeB",
                 "55d65dd6-5351-4cf4-a6d9-e05ce6d343ab": "mVrepdLAqSD",
+                "87626d3d-fd19-49d9-98da-daca4afe85bf": "mVrepdLAqSD",
                 "79158397-0d87-4d0e-8694-ad680a907a79": "YQK9pleIoeB",
                 "031293d9-fd8a-4682-a91e-a4390d57b0cf": "YQK9pleIoeB",
                 "4369eec8-0416-4e16-b013-e635ce46a02f": "YQK9pleIoeB",
@@ -1270,6 +1277,9 @@ class Facility(SequenceMixin, AbstractBase):
                 "93c0fe24-3f12-4be2-b5ff-027e0bd02274": "AaAF5EmS1fk",
                 "c3bab995-0c29-433c-b39c-6b86d6084f5f": "AaAF5EmS1fk",
                 "6cb92834-107c-404a-91fa-cf60b1eb5333": "aRxa6o8GqZN",
+                "2e651780-2ed4-4f8c-9061-6e5acf95d581": "AaAF5EmS1fk",
+                "30af7e3f-cd52-4ca0-b5dc-d8b1040a9808": "AaAF5EmS1fk",
+                "d64bbd8a-4013-463b-a238-c346cee66a92": "AaAF5EmS1fk",
             }
             kmhfl_dhis2_keph_mapping = {
                 "ed23da85-4c92-45af-80fa-9b2123769f49": "FpY8vg4gh46",
@@ -1535,6 +1545,7 @@ class Facility(SequenceMixin, AbstractBase):
     def get_facility_services(self):
         """Digests the facility_services for the sake of frontend."""
         services = self.facility_services.all()
+
         return [
             {
                 "id": service.id,
@@ -1557,7 +1568,9 @@ class Facility(SequenceMixin, AbstractBase):
     @property
     def get_facility_contacts(self):
         """For the same purpose as the get_facility_services above"""
+      
         contacts = self.facility_contacts.all()
+
         return [
             {
                 "id": contact.id,
@@ -1572,14 +1585,14 @@ class Facility(SequenceMixin, AbstractBase):
     def get_facility_infrastructure(self):
         """For the same purpose as the get_facility_contacts above"""
         infra = self.facility_infrastructure.all()
+
         return [
             {
                 "id": inf.id,
-                "infrastructure_id": inf.id,
-                "name": inf.name,
-                "infrastructure_name": inf.name,
-                "infrastructure_category": inf.category.id,
-                "infrastructure_category_name": str(inf.category.name),
+                "name": inf.infrastructure.name,
+                "count":inf.count,
+                "infrastructure_category": inf.infrastructure.category.id,
+                "infrastructure_category_name": str(inf.infrastructure.category.name),
             }
             for inf in infra
         ]
@@ -1587,34 +1600,19 @@ class Facility(SequenceMixin, AbstractBase):
     @property
     def get_facility_specialities(self):
         """For the same purpose as the get_facility_infra... above"""
-        hr = self.facility_specialities.all()
+        hr = self.facility_specialists.all()
+
         return [
             {
                 "id": h_r.id,
-                "speciality_id": h_r.id,
-                "name": h_r.name,
-                "speciality_name": h_r.name,
-                "speciality_category": h_r.category.id,
-                "speciality_category_name": str(h_r.category.name),
+                "name": h_r.speciality.name,
+                "count": h_r.count,
+                "speciality_category": h_r.speciality.category.id,
+                "speciality_category_name": str(h_r.speciality.category.name),
             }
             for h_r in hr
         ]
 
-    @property
-    def get_facility_humanresources(self):
-        """For the same purpose as the get_facility_infra... above"""
-        hr = self.facility_humanresources.all()
-        return [
-            {
-                "id": h_r.id,
-                "speciality_id": h_r.id,
-                "name": h_r.name,
-                "speciality_name": h_r.name,
-                "speciality_category": h_r.category.id,
-                "speciality_category_name": str(h_r.category.name),
-            }
-            for h_r in hr
-        ]
 
     @property
     def average_rating(self):
@@ -2059,7 +2057,7 @@ class FacilityUpdates(AbstractBase):
                     new_date = datetime.date(year=value.year, month=value.month, day=value.day)
                     value = new_date
                 elif field_name == 'sub_county_id':
-                    value = SubCounty.objects.get(name=field_changed.get('display_value')).id
+                    value = SubCounty.objects.get(id=field_changed.get('actual_value')).id
                 else:
                     value = field_changed.get("actual_value")
 
@@ -2616,7 +2614,7 @@ class FacilityService(AbstractBase):
         'CHRIO')
     # For services that do not have options, the service will be linked
     # directly to the
-    service = models.ForeignKey(Service, on_delete=models.PROTECT,)
+    service = models.ForeignKey(Service, related_name='service_id', on_delete=models.PROTECT)
 
     @property
     def service_has_options(self):
@@ -2891,7 +2889,7 @@ class FacilitySpecialist(AbstractBase):
         Facility, related_name='facility_specialists',
         on_delete=models.PROTECT)
 
-    speciality = models.ForeignKey(Speciality, on_delete=models.PROTECT,)
+    speciality = models.ForeignKey(Speciality, related_name='speciality', on_delete=models.PROTECT,)
 
     count = models.IntegerField(
         default=0, 
@@ -3010,8 +3008,9 @@ class FacilityInfrastructure(AbstractBase):
         on_delete=models.PROTECT)
 
     infrastructure = models.ForeignKey(
-        Infrastructure, 
-        on_delete=models.PROTECT,)
+        Infrastructure,
+        related_name='infrastructure',
+            on_delete=models.PROTECT,)
 
     count = models.IntegerField(
         default=0, 
