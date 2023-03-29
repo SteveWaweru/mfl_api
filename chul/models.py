@@ -226,6 +226,15 @@ class CommunityHealthUnit(SequenceMixin, AbstractBase):
             return chu.updates
         except ChuUpdateBuffer.DoesNotExist:
             return {}
+        except ChuUpdateBuffer.MultipleObjectsReturned:
+
+            latest_chu = ChuUpdateBuffer.objects.filter(
+                is_approved=False,
+                is_rejected=False,
+                health_unit=self
+            ).order_by('-updated').first()
+            return latest_chu.updates
+
 
     @property
     def latest_update(self):

@@ -341,3 +341,8 @@ class CHURatingSerializer(AbstractFieldsMixin, serializers.ModelSerializer):
 
     class Meta(AbstractFieldsMixin.Meta):
         model = CHURating
+class ChulSummarySerializer(serializers.ModelSerializer):
+    # count=serializers.IntegerField()
+    class Meta:
+        model = None
+        fields = '__all__'
