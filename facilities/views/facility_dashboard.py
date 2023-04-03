@@ -1,8 +1,10 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from itertools import count
 
+from django.http import JsonResponse
 from django.utils import timezone
 from django.db.models import Q
+from django.db import connection
 
 from rest_framework.views import APIView, Response
 from common.models import County, SubCounty, Ward
@@ -20,6 +22,30 @@ from ..views import QuerysetFilterMixin
 
 class DashBoard(QuerysetFilterMixin, APIView):
     queryset = Facility.objects.all()
+    def get_chul_summary(self, start_date=None, end_date=None):
+        with connection.cursor() as cursor:
+            sql = "SELECT chul_status.name, COUNT(chul_communityhealthunit.status_id) As counts FROM chul_communityhealthunit INNER JOIN chul_status ON chul_communityhealthunit.status_id = chul_status.id"
+            params = []
+            if start_date:
+                sql += " WHERE chul_communityhealthunit.date_created >= %s"
+                params.append(start_date)
+            if end_date:
+                if start_date:
+                    sql += " AND chul_communityhealthunit.date_created <= %s"
+                else:
+                    sql += " WHERE chul_communityhealthunit.date_created <= %s"
+                params.append(end_date)
+            sql += " GROUP BY chul_status.name"
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            return rows
+
+    def chul_summary(self, request, *args, **kwargs):
+        queryset = self.get_chul_summary()
+        data = []
+        for row in queryset:
+            data.append({"name": row[0], "count": row[1]})
+        return data
 
     def get_chu_count_in_county_summary(self, county):
         return CommunityHealthUnit.objects.filter(
@@ -367,21 +393,35 @@ class DashBoard(QuerysetFilterMixin, APIView):
     def facilities_pending_approval_count(self, cty):
         if not cty and not self.request.query_params.get('sub_county'):
             updated_pending_approval = self.get_queryset().filter(has_edits=True)
-            newly_created = self.queryset.filter(approved=False, rejected=False)
+
         else:
             if not self.request.query_params.get('ward'):
                 updated_pending_approval = self.get_queryset().filter(
                     ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), has_edits=True)
-                newly_created = self.queryset.filter(
-                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), approved=False, rejected=False)
+
             else:
                 updated_pending_approval = self.get_queryset().filter(
                     ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), has_edits=True)
+
+        return len(
+            list(set(list(updated_pending_approval) ))
+        )
+    def facilities_newly_created_count(self, cty):
+        if not cty and not self.request.query_params.get('sub_county'):
+
+            newly_created = self.queryset.filter(approved=False, rejected=False)
+        else:
+            if not self.request.query_params.get('ward'):
+
+                newly_created = self.queryset.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), approved=False, rejected=False)
+            else:
+
                 newly_created = self.queryset.filter(
                     ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), approved=False, rejected=False)
 
         return len(
-            list(set(list(updated_pending_approval) + list(newly_created)))
+            list(set (list(newly_created)))
         )
 
     def get_facilities_approved_count(self,cty):
@@ -527,6 +567,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
             "recently_created": self.get_recently_created_facilities(county_),
             "recently_created_chus": self.get_recently_created_chus(county_),
             "pending_updates": self.facilities_pending_approval_count(county_),
+            "newly_created": self.facilities_newly_created_count(county_),
             "rejected_facilities_count": self.get_rejected_facilities_count(county_),
             "closed_facilities_count": self.get_closed_facilities_count(county_),
             "rejected_chus": self.get_rejected_chus(county_),
@@ -534,7 +575,10 @@ class DashBoard(QuerysetFilterMixin, APIView):
             "total_chus": total_chus,
             "approved_facilities": self.get_facilities_approved_count(county_),
 
+
         }
+        chul_summary = self.chul_summary( *args, **kwargs)
+        data["chul_summary"] = chul_summary
 
         fields = self.request.query_params.get("fields", None)
         if fields:

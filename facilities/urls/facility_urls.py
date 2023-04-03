@@ -175,7 +175,7 @@ urlpatterns = (
     url(r'^facility_specialists/(?P<pk>[^/]+)/$',
         views.FacilitySpecialistDetailView.as_view(),
         name='facility_specialist_detail'),
-    # Infrastructure
+    # Infrastructurepath
     url(r'^infrastructure/$', views.InfrastructureListView.as_view(), name='infrastructure_list'),
     url(r'^infrastructure/(?P<pk>[^/]+)/$', views.InfrastructureDetailView.as_view(),
         name='infrastructure_detail'),
