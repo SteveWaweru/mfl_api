@@ -15,13 +15,16 @@ from ..models import (
     Owner,
     FacilityStatus,
     FacilityType,
-    Facility,KephLevel
+    Facility,KephLevel,
+    FacilityApproval
 )
+from ..serializers import FacilityApprovalSerializer
 from ..views import QuerysetFilterMixin
 
 
 class DashBoard(QuerysetFilterMixin, APIView):
     queryset = Facility.objects.all()
+    facility_approval = FacilityApproval.objects.all()
     def get_chul_summary(self, start_date=None, end_date=None):
         with connection.cursor() as cursor:
             sql = "SELECT chul_status.name, COUNT(chul_communityhealthunit.status_id) As counts FROM chul_communityhealthunit INNER JOIN chul_status ON chul_communityhealthunit.status_id = chul_status.id"
@@ -406,6 +409,45 @@ class DashBoard(QuerysetFilterMixin, APIView):
         return len(
             list(set(list(updated_pending_approval) ))
         )
+    def facilities_rejected_at_validation(self, cty):
+
+        if not cty and not self.request.query_params.get('sub_county'):
+
+            rejected_at_validation = self.facility_approval.filter( is_cancelled=True, is_national_approval=False)
+        else:
+            if not self.request.query_params.get('ward'):
+
+                rejected_at_validation = self.facility_approval.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), is_cancelled=True, is_national_approval=False)
+            else:
+
+                rejected_at_validation = self.facility_approval.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), is_cancelled=True, is_national_approval=False)
+
+        return len(
+            list(set (list(rejected_at_validation)))
+        )
+
+    def facilities_rejected_at_approval(self, cty):
+
+        if not cty and not self.request.query_params.get('sub_county'):
+
+            rejected_at_approval = self.queryset.filter( rejected=True, approved_national_level=False)
+        else:
+            if not self.request.query_params.get('ward'):
+
+                rejected_at_approval = self.queryset.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), rejected=True, approved_national_level=False)
+            else:
+
+                rejected_at_approval = self.queryset.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), rejected=True, approved_national_level=False)
+
+        return len(
+            list(set (list(rejected_at_approval)))
+        )
+
+
     def facilities_newly_created_count(self, cty):
         if not cty and not self.request.query_params.get('sub_county'):
 
@@ -423,6 +465,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
         return len(
             list(set (list(newly_created)))
         )
+
 
     def get_facilities_approved_count(self,cty):
         if not cty and not self.request.query_params.get('sub_county'):
@@ -483,6 +526,8 @@ class DashBoard(QuerysetFilterMixin, APIView):
                 return self.get_queryset().filter(rejected=True, ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county')).count()
             else:
                 return self.get_queryset().filter(rejected=True, ward__sub_county__county=cty, ward=self.request.query_params.get('ward')).count()
+
+
 
 
     def get_closed_facilities_count(self, cty):
@@ -566,12 +611,14 @@ class DashBoard(QuerysetFilterMixin, APIView):
             "owner_types": self.get_facility_owner_types_summary(county_),
             "recently_created": self.get_recently_created_facilities(county_),
             "recently_created_chus": self.get_recently_created_chus(county_),
-            "pending_updates": self.facilities_pending_approval_count(county_),
-            "newly_created": self.facilities_newly_created_count(county_),
+            "facilitiess_pending_aproval": self.facilities_pending_approval_count(county_),
+            "newly_created_facilities": self.facilities_newly_created_count(county_),
             "rejected_facilities_count": self.get_rejected_facilities_count(county_),
             "closed_facilities_count": self.get_closed_facilities_count(county_),
             "rejected_chus": self.get_rejected_chus(county_),
             "chus_pending_approval": self.get_chus_pending_approval(county_),
+            "facilities_rejected_at_validation":self.facilities_rejected_at_validation(county_),
+            "facilities_rejected_at_approval":self.facilities_rejected_at_approval(county_),
             "total_chus": total_chus,
             "approved_facilities": self.get_facilities_approved_count(county_),
 
@@ -588,3 +635,4 @@ class DashBoard(QuerysetFilterMixin, APIView):
             }
             return Response(required_data)
         return Response(data)
+
