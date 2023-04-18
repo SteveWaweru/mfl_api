@@ -670,6 +670,11 @@ class FacilityInfrastructureSerializer(
         model = FacilityInfrastructure
 
 
+class ChulSummarySerializer(serializers.ModelSerializer):
+    # count=serializers.IntegerField()
+    class Meta:
+        model = None
+        fields = '__all__'
 
 class FacilityDetailSerializer(FacilitySerializer):
     facility_services = serializers.ReadOnlyField(
@@ -836,4 +841,11 @@ class FacilityDetailSerializer(FacilitySerializer):
         if self.inlining_errors:
             raise ValidationError(self.inlining_errors)
         return instance
+class FacilityApprovalSerializer(AbstractFieldsMixin, serializers.ModelSerializer):
+
+    class Meta:
+        model = None
+        fields = '__all__'
+
+
 
