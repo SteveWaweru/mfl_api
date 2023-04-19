@@ -1,24 +1,54 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
+from itertools import count
 
+from django.http import JsonResponse
 from django.utils import timezone
 from django.db.models import Q
+from django.db import connection
 
 from rest_framework.views import APIView, Response
 from common.models import County, SubCounty, Ward
-from chul.models import CommunityHealthUnit
+from chul.models import (CommunityHealthUnit, Status)
 
 from ..models import (
     OwnerType,
     Owner,
     FacilityStatus,
     FacilityType,
-    Facility
+    Facility,KephLevel,
+    FacilityApproval
 )
+from ..serializers import FacilityApprovalSerializer
 from ..views import QuerysetFilterMixin
 
 
 class DashBoard(QuerysetFilterMixin, APIView):
     queryset = Facility.objects.all()
+    facility_approval = FacilityApproval.objects.all()
+    def get_chul_summary(self, start_date=None, end_date=None):
+        with connection.cursor() as cursor:
+            sql = "SELECT chul_status.name, COUNT(chul_communityhealthunit.status_id) As counts FROM chul_communityhealthunit INNER JOIN chul_status ON chul_communityhealthunit.status_id = chul_status.id"
+            params = []
+            if start_date:
+                sql += " WHERE chul_communityhealthunit.date_created >= %s"
+                params.append(start_date)
+            if end_date:
+                if start_date:
+                    sql += " AND chul_communityhealthunit.date_created <= %s"
+                else:
+                    sql += " WHERE chul_communityhealthunit.date_created <= %s"
+                params.append(end_date)
+            sql += " GROUP BY chul_status.name"
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            return rows
+
+    def chul_summary(self, request, *args, **kwargs):
+        queryset = self.get_chul_summary()
+        data = []
+        for row in queryset:
+            data.append({"name": row[0], "count": row[1]})
+        return data
 
     def get_chu_count_in_county_summary(self, county):
         return CommunityHealthUnit.objects.filter(
@@ -48,7 +78,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
             facility_county_summary[str(county.name)] = facility_county_count
         top_10_counties = sorted(
             facility_county_summary.items(),
-            key=lambda x: x[1], reverse=True)[0:20]
+            key=lambda x: x[1], reverse=True)[0:94]
         facility_county_summary
         top_10_counties_summary = []
         for item in top_10_counties:
@@ -63,11 +93,16 @@ class DashBoard(QuerysetFilterMixin, APIView):
         return top_10_counties_summary if self.request.user.is_national else []
 
     def get_facility_constituency_summary(self):
-        constituencies = SubCounty.objects.filter(
-            county=self.request.user.county)
-        constituencies = constituencies if self.request.user.county else []
+        if not self.request.query_params.get('sub_county'):
+            constituencies =  SubCounty.objects.filter(
+            county=self.request.user.county) \
+            if not self.request.query_params.get('ward') and self.request.user.county  else []
 
+        else:
+            constituencies = [SubCounty.objects.get(id=self.request.query_params.get('sub_county'))]
+     
         facility_constituency_summary = {}
+
         for const in constituencies:
             facility_const_count = self.get_queryset().filter(
                 ward__sub_county=const).count()
@@ -81,6 +116,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
             const = SubCounty.objects.get(name=item[0])
             chu_count = self.get_chu_count_in_constituency_summary(const)
             top_10_consts_summary.append(
+                
                 {
                     "name": item[0],
                     "count": item[1],
@@ -88,10 +124,18 @@ class DashBoard(QuerysetFilterMixin, APIView):
                 })
         return top_10_consts_summary
 
+        
     def get_facility_ward_summary(self):
-        wards = Ward.objects.filter(
+
+        if not self.request.query_params.get('ward'):
+            wards = Ward.objects.filter(
             sub_county=self.request.user.sub_county) \
             if self.request.user.sub_county else []
+
+        else:
+            wards = [Ward.objects.get(id=self.request.query_params.get('ward'))]
+            
+        
         facility_ward_summary = {}
         for ward in wards:
             facility_ward_count = self.get_queryset().filter(
@@ -113,6 +157,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
                 })
         return top_10_wards_summary
 
+
     def get_facility_type_summary(self, cty):
         facility_type_parents_names = []
         for f_type in FacilityType.objects.all():
@@ -128,13 +173,20 @@ class DashBoard(QuerysetFilterMixin, APIView):
             summaries[parent] = 0
 
         for facility_type in facility_types:
-            if not cty:
-                summaries[facility_type.sub_division] = summaries.get(
-                    facility_type.sub_division) + self.get_queryset().filter(
-                            facility_type=facility_type).count()
+            if not cty and not self.request.query_params.get('sub_county'):
+                
+                    summaries[facility_type.sub_division] = summaries.get(
+                        facility_type.sub_division) + self.get_queryset().filter(
+                                facility_type=facility_type).count()
             else:
-                summaries[facility_type.sub_division] = self.get_queryset().filter(
-                    facility_type=facility_type, ward__sub_county__county=cty).count()
+                if not self.request.query_params.get('ward'):
+                    summaries[facility_type.sub_division] = self.get_queryset().filter(
+                    facility_type=facility_type, ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county')).count()
+                else:
+                    summaries[facility_type.sub_division] = self.get_queryset().filter(
+                    facility_type=facility_type, ward__sub_county__county=cty, ward=self.request.query_params.get('ward')).count()
+
+                
 
         facility_type_summary =  [
             {"name": key, "count": value } for key, value in summaries.items()
@@ -148,9 +200,10 @@ class DashBoard(QuerysetFilterMixin, APIView):
 
     def get_facility_owner_summary(self, cty):
         owners = Owner.objects.all()
+
         facility_owners_summary = []
         for owner in owners:
-            if not cty:
+            if not cty and not self.request.query_params.get('sub_county'):
                 facility_owners_summary.append(
                     {
                         "name": owner.name,
@@ -158,19 +211,29 @@ class DashBoard(QuerysetFilterMixin, APIView):
                             owner=owner).count()
                     })
             else:
-                facility_owners_summary.append(
+                if not self.request.query_params.get('ward'):
+                    facility_owners_summary.append(
+                        {
+                            "name": owner.name,
+                            "count": self.get_queryset().filter(
+                                ward__sub_county__county=cty, owner=owner, sub_county=self.request.query_params.get('sub_county')).count()
+                        })
+                else:
+                    facility_owners_summary.append(
                     {
                         "name": owner.name,
                         "count": self.get_queryset().filter(
-                            ward__sub_county__county=cty, owner=owner).count()
+                            ward__sub_county__county=cty, owner=owner, ward=self.request.query_params.get('ward')).count()
                     })
+                    
         return facility_owners_summary
+
 
     def get_facility_status_summary(self, cty):
         statuses = FacilityStatus.objects.all()
         status_summary = []
         for status in statuses:
-            if not cty:
+            if not cty and not self.request.query_params.get('sub_county'):
                 status_summary.append(
                     {
                         "name": status.name,
@@ -178,13 +241,22 @@ class DashBoard(QuerysetFilterMixin, APIView):
                             operation_status=status).count()
                     })
             else:
-                status_summary.append(
-                    {
-                        "name": status.name,
-                        "count": self.get_queryset().filter(
-                            ward__sub_county__county=cty,
-                            operation_status=status).count()
-                    })
+                if not self.request.query_params.get('ward'):
+                    status_summary.append(
+                        {
+                            "name": status.name,
+                            "count": self.get_queryset().filter(
+                                ward__sub_county__county=cty,
+                                operation_status=status, sub_county=self.request.query_params.get('sub_county')).count()
+                        })
+                else:
+                    status_summary.append(
+                        {
+                            "name": status.name,
+                            "count": self.get_queryset().filter(
+                                ward__sub_county__county=cty,
+                                operation_status=status, ward=self.request.query_params.get('ward')).count()
+                        })
 
         return status_summary
 
@@ -192,7 +264,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
         owner_types = OwnerType.objects.all()
         owner_types_summary = []
         for owner_type in owner_types:
-            if not cty:
+            if not cty and not self.request.query_params.get('sub_county'):
                 owner_types_summary.append(
                     {
                         "name": owner_type.name,
@@ -200,13 +272,23 @@ class DashBoard(QuerysetFilterMixin, APIView):
                             owner__owner_type=owner_type).count()
                     })
             else:
-                owner_types_summary.append(
-                    {
-                        "name": owner_type.name,
-                        "count": self.get_queryset().filter(
-                            ward__sub_county__county=cty,
-                            owner__owner_type=owner_type).count()
-                    })
+                if not self.request.query_params.get('ward'):
+                    owner_types_summary.append(
+                        {
+                            "name": owner_type.name,
+                            "count": self.get_queryset().filter(
+                                ward__sub_county__county=cty,
+                                owner__owner_type=owner_type, sub_county=self.request.query_params.get('sub_county')).count()
+                        })
+                else:
+                    owner_types_summary.append(
+                        {
+                            "name": owner_type.name,
+                            "count": self.get_queryset().filter(
+                                ward__sub_county__county=cty,
+                                owner__owner_type=owner_type, ward=self.request.query_params.get('ward')).count()
+                        })
+
 
         return owner_types_summary
 
@@ -312,67 +394,239 @@ class DashBoard(QuerysetFilterMixin, APIView):
 
 
     def facilities_pending_approval_count(self, cty):
-        if not cty:
+        if not cty and not self.request.query_params.get('sub_county'):
             updated_pending_approval = self.get_queryset().filter(has_edits=True)
-            newly_created = self.queryset.filter(approved=False, rejected=False)
+
         else:
-            updated_pending_approval = self.get_queryset().filter(
-                ward__sub_county__county=cty, has_edits=True)
-            newly_created = self.queryset.filter(
-                ward__sub_county__county=cty, approved=False, rejected=False)
+            if not self.request.query_params.get('ward'):
+                updated_pending_approval = self.get_queryset().filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), has_edits=True)
+
+            else:
+                updated_pending_approval = self.get_queryset().filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), has_edits=True)
+
         return len(
-            list(set(list(updated_pending_approval) + list(newly_created)))
+            list(set(list(updated_pending_approval) ))
+        )
+    def facilities_rejected_at_validation(self, cty):
+
+        if not cty and not self.request.query_params.get('sub_county'):
+
+            rejected_at_validation = self.facility_approval.filter( is_cancelled=True, is_national_approval=False)
+        else:
+            if not self.request.query_params.get('ward'):
+
+                rejected_at_validation = self.facility_approval.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), is_cancelled=True, is_national_approval=False)
+            else:
+
+                rejected_at_validation = self.facility_approval.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), is_cancelled=True, is_national_approval=False)
+
+        return len(
+            list(set (list(rejected_at_validation)))
         )
 
+    def facilities_rejected_at_approval(self, cty):
+
+        if not cty and not self.request.query_params.get('sub_county'):
+
+            rejected_at_approval = self.queryset.filter( rejected=True, approved_national_level=False)
+        else:
+            if not self.request.query_params.get('ward'):
+
+                rejected_at_approval = self.queryset.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), rejected=True, approved_national_level=False)
+            else:
+
+                rejected_at_approval = self.queryset.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), rejected=True, approved_national_level=False)
+
+        return len(
+            list(set (list(rejected_at_approval)))
+        )
+
+
+    def facilities_newly_created_count(self, cty):
+        if not cty and not self.request.query_params.get('sub_county'):
+
+            newly_created = self.queryset.filter(approved=False, rejected=False)
+        else:
+            if not self.request.query_params.get('ward'):
+
+                newly_created = self.queryset.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), approved=False, rejected=False)
+            else:
+
+                newly_created = self.queryset.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), approved=False, rejected=False)
+
+        return len(
+            list(set (list(newly_created)))
+        )
+
+    def facilities_pending_validation_count(self, cty): 
+
+        if not cty and not self.request.query_params.get('sub_county'):
+            keph_array = []
+            updated_pending_validation = self.get_queryset().filter(has_edits=True,  rejected=False).count()
+            new_pending_validation = self.queryset.filter(has_edits=False, approved=None, rejected=False).count()
+
+            keph_array.append({"name": "Updated facilities pending validation", "count": updated_pending_validation})
+            keph_array.append({"name": "New facilities pending validation", "count": new_pending_validation})       
+        else:
+            if not self.request.query_params.get('ward'):
+                keph_array = []
+                updated_pending_validation = self.get_queryset().filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), has_edits=True,  rejected=False).count()
+                new_pending_validation = self.queryset.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), has_edits=False, approved=None, rejected=False).count()
+                keph_array.append({"name": "Updated facilities pending validation", "count": updated_pending_validation})
+                keph_array.append({"name": "New facilities pending validation", "count": new_pending_validation})
+            else:
+                keph_array=[]
+                updated_pending_validation = self.get_queryset().filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), has_edits=True,  rejected=False).count()
+                new_pending_validation = self.queryset.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), has_edits=False, approved=None, rejected=False).count()
+                keph_array.append({"name": "Updated facilities pending validation", "count": updated_pending_validation})
+                keph_array.append({"name": "New facilities pending validation", "count": new_pending_validation})        
+        return keph_array
+
     def get_facilities_approved_count(self,cty):
-        if not cty:
+        if not cty and not self.request.query_params.get('sub_county'):
             return self.queryset.filter(approved=True, rejected=False).count()
         else:
-            return self.queryset.filter(approved=True, rejected=False, ward__sub_county__county=cty).count()
+            if not self.request.query_params.get('ward'):
+                return self.queryset.filter(approved=True, rejected=False, ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county')).count()
+            else:
+                return self.queryset.filter(approved=True, rejected=False, ward__sub_county__county=cty, ward=self.request.query_params.get('ward')).count()
+
 
     def get_chus_pending_approval(self, cty):
         """
         Get the number of CHUs pending approval
         """
-        if not cty:
+        if not cty and not self.request.query_params.get('sub_county'):
             return CommunityHealthUnit.objects.filter(
                 Q(is_approved=False, is_rejected=False) |
                 Q(has_edits=True)).distinct().filter(
                     facility__in=self.get_queryset()).count()
         else:
-            return CommunityHealthUnit.objects.filter(
-                Q(is_approved=False, is_rejected=False) |
-                Q(has_edits=True)).distinct().filter(
-                    facility__in=self.get_queryset(),
-                    facility__ward__sub_county__county=cty).count()
+            if not self.request.query_params.get('ward'):
+                return CommunityHealthUnit.objects.filter(
+                    Q(is_approved=False, is_rejected=False) |
+                    Q(has_edits=True)).distinct().filter(
+                        facility__in=self.get_queryset(),
+                        facility__ward__sub_county__county=cty, facility__ward__sub_county=self.request.query_params.get('sub_county')).count()
+            else:
+                return CommunityHealthUnit.objects.filter(
+                    Q(is_approved=False, is_rejected=False) |
+                    Q(has_edits=True)).distinct().filter(
+                        facility__in=self.get_queryset(),
+                        facility__ward__sub_county__county=cty, facility__ward=self.request.query_params.get('ward')).count()
+
 
     def get_rejected_chus(self, cty):
         """
         Get the number of CHUs that have been rejected
         """
-        if not cty:
+        if not cty and not self.request.query_params.get('sub_county'):
             return CommunityHealthUnit.objects.filter(is_rejected=True).count()
         else:
-            return CommunityHealthUnit.objects.filter(
-                is_rejected=True,
-                facility__ward__sub_county__county=cty).count()
+            if not self.request.query_params.get('ward'):
+                return CommunityHealthUnit.objects.filter(
+                    is_rejected=True,
+                    facility__ward__sub_county__county=cty, facility__ward__sub_county=self.request.query_params.get('sub_county')).count()
+            else:
+                 return CommunityHealthUnit.objects.filter(
+                    is_rejected=True,
+                    facility__ward__sub_county__county=cty, facility__ward=self.request.query_params.get('ward')).count()
+
 
     def get_rejected_facilities_count(self, cty):
-        if not cty:
+        if not cty and not self.request.query_params.get('sub_county'):
             return self.get_queryset().filter(rejected=True).count()
         else:
-            return self.get_queryset().filter(rejected=True, ward__sub_county__county=cty).count()
+            if not self.request.query_params.get('ward'):
+                return self.get_queryset().filter(rejected=True, ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county')).count()
+            else:
+                return self.get_queryset().filter(rejected=True, ward__sub_county__county=cty, ward=self.request.query_params.get('ward')).count()
+
+
+
 
     def get_closed_facilities_count(self, cty):
-        if not cty:
+        if not cty and not self.request.query_params.get('sub_county'):
             return self.get_queryset().filter(closed=True).count()
         else:
-            return self.get_queryset().filter(closed=True, ward__sub_county__county=cty).count()
+            if not self.request.query_params.get('ward'):
+                return self.get_queryset().filter(closed=True, ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county')).count()
+            else:
+                return self.get_queryset().filter(closed=True, ward__sub_county__county=cty, ward=self.request.query_params.get('ward')).count()
+
+
+    def get_facilities_kephlevel_count(self,cty):
+        """
+        Function to get facilities by keph level
+        """
+        if not cty and not self.request.query_params.get('sub_county'):
+            keph_level = KephLevel.objects.values("id", "name")  
+            keph_array = []
+            for keph in keph_level:
+                keph_count = self.get_queryset().filter(keph_level_id=keph.get("id")).count()
+                keph_array.append({"name" : keph.get("name"), "count" : keph_count})
+            return keph_array
+        else:
+            if not self.request.query_params.get('ward'):
+                keph_level = KephLevel.objects.values("id", "name")  
+                keph_array = []
+                for keph in keph_level:
+                    keph_count = self.get_queryset().filter(Q(keph_level_id=keph.get("id"),ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'))).count()
+                    keph_array.append({"name" : keph.get("name"), "count" : keph_count})
+                return keph_array
+            else:
+                keph_level = KephLevel.objects.values("id", "name") 
+                keph_array = []
+                for keph in keph_level:
+                    keph_count = self.get_queryset().filter(Q(keph_level_id=keph.get("id"),ward__sub_county__county=cty, ward=self.request.query_params.get('ward'))).count()
+                    keph_array.append({"name" : keph.get("name"), "count" : keph_count})
+                return keph_array
+       
+    def get_chu_summary(self, cty):
+
+        if not cty and not self.request.query_params.get('sub_county'):
+            status = Status.objects.values("id", "name")  
+            status_array = []
+            for st in status:
+                status_count = CommunityHealthUnit.objects.filter(Q(status=st.get('id'))).count()
+                status_array.append({"name" : st.get("name"), "count" : status_count})
+
+            return status_array
+        else:
+            if not self.request.query_params.get('ward'):
+                status = Status.objects.values("id", "name")  
+                status_array = []
+                for st in status:
+                    status_count = CommunityHealthUnit.objects.filter(status = st.get('id'),facility__in=self.get_queryset().filter(ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'))).count()
+                    # status_count = CommunityHealthUnit.objects.filter(Q(status = st.get('id'),facility__ward__sub_county__county=cty, facility__ward__sub_county=self.request.query_params.get('sub_county'))).count()
+                    status_array.append({"name" : st.get("name"), "count" : status_count})
+            else:
+                status = Status.objects.values("id", "name")  
+                status_array = []
+                for st in status:
+                    status_count = CommunityHealthUnit.objects.filter(status = st.get('id'),facility__in=self.get_queryset().filter(ward__sub_county__county=cty, ward=self.request.query_params.get('ward'))).count()
+                    # status_count = CommunityHealthUnit.objects.filter(Q(status = st.get('id'),facility__ward__sub_county__county=cty, facility__ward=self.request.query_params.get('ward'))).count()
+                    status_array.append({"name" : st.get("name"), "count" : status_count})
+            return status_array     
 
     def get(self, *args, **kwargs):
+      
         user = self.request.user
         
         county_ = user.county
+        
         if not self.request.query_params.get('county'):
             county_ = user.county
         else:
@@ -390,6 +644,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
                 ward__sub_county__county=county_)).count()
         
         data = {
+            "keph_level" : self.get_facilities_kephlevel_count(county_),
             "total_facilities": total_facilities,
             "county_summary": self.get_facility_county_summary(None)
             if user.is_national else self.get_facility_county_summary(county_),
@@ -403,15 +658,23 @@ class DashBoard(QuerysetFilterMixin, APIView):
             "owner_types": self.get_facility_owner_types_summary(county_),
             "recently_created": self.get_recently_created_facilities(county_),
             "recently_created_chus": self.get_recently_created_chus(county_),
-            "pending_updates": self.facilities_pending_approval_count(county_),
+            "facilitiess_pending_aproval": self.facilities_pending_approval_count(county_),
+            "newly_created_facilities": self.facilities_newly_created_count(county_),
             "rejected_facilities_count": self.get_rejected_facilities_count(county_),
             "closed_facilities_count": self.get_closed_facilities_count(county_),
             "rejected_chus": self.get_rejected_chus(county_),
             "chus_pending_approval": self.get_chus_pending_approval(county_),
+            "facilities_rejected_at_validation":self.facilities_rejected_at_validation(county_),
+            "facilities_rejected_at_approval":self.facilities_rejected_at_approval(county_),
             "total_chus": total_chus,
             "approved_facilities": self.get_facilities_approved_count(county_),
+            "cu_summary": self.get_chu_summary(county_),
+            "validations": self.facilities_pending_validation_count(county_),
+
 
         }
+        chul_summary = self.chul_summary( *args, **kwargs)
+        data["chul_summary"] = chul_summary
 
         fields = self.request.query_params.get("fields", None)
         if fields:
@@ -421,3 +684,4 @@ class DashBoard(QuerysetFilterMixin, APIView):
             }
             return Response(required_data)
         return Response(data)
+

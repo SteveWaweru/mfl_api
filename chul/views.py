@@ -1,7 +1,11 @@
+from django.http import JsonResponse
 from django.template import loader, Context
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from rest_framework import generics
+from django.db.models import Count
+from django.db import connection
+from django.apps import apps
 from common.views import AuditableDetailViewMixin, DownloadPDFMixin
 from common.models import UserConstituency, UserCounty, UserSubCounty
 from .models import (
@@ -17,6 +21,7 @@ from .models import (
 
 from .serializers import (
     CommunityHealthUnitSerializer,
+    ChulSummarySerializer,
     CommunityHealthWorkerSerializer,
     CommunityHealthWorkerContactSerializer,
     StatusSerializer,
@@ -40,22 +45,32 @@ from .filters import (
 
 class FilterCommunityUnitsMixin(object):
 
-    def get_queryset(self, *args, **kwargs):
-        custom_queryset = kwargs.pop('custom_queryset', None)
-        if hasattr(custom_queryset, 'count'):
-            self.queryset = custom_queryset
+    def filter_approved_chus(self):
+        if self.request.user.has_perm(
+            "chul.view_unapproved_facilities") \
+            is False and 'approved' in [
+                field.name for field in
+                self.queryset.model._meta.get_fields()]:
 
-        if not self.request.user.has_perm(
-                "facilities.view_unpublished_facilities"):
-            self.queryset = self.queryset.filter(facility__approved=True)
+            # filter both facilities and facilities materialized view
+            try:
+                self.queryset = self.queryset.filter(approved=True, operation_status__is_public_visible=True)
+            except:
+                self.queryset = self.queryset.filter(approved=True, is_public_visible=True)
 
-        if not self.request.user.has_perm(
-                "chul.view_rejected_chus"):
-            self.queryset = self.queryset.filter(is_approved=True)
+    def filter_rejected_chus(self):
+        if self.request.user.has_perm("chul.view_rejected_chus") \
+            is False and ('rejected' in [
+                field.name for field in
+                self.queryset.model._meta.get_fields()]):
+            self.queryset = self.queryset.filter(rejected=False)
 
+    def filter_for_national_users(self):
         if self.request.user.is_national:
             self.queryset = self.queryset
 
+
+    def filter_for_county_users(self):
         if self.request.user.county:
             self.queryset = self.queryset.filter(
                 facility__ward__constituency__county__in=[
@@ -63,6 +78,15 @@ class FilterCommunityUnitsMixin(object):
                         user=self.request.user)
                 ])
 
+    def filter_for_sub_county_users(self):
+        if self.request.user.sub_county:
+            self.queryset = self.queryset.filter(
+                facility__ward__sub_county__in=[
+                    us.sub_county for us in UserSubCounty.objects.filter(
+                        user=self.request.user)
+                ])
+
+    def filter_for_consituency_users(self):
         if self.request.user.constituency:
             self.queryset = self.queryset.filter(
                 facility__ward__constituency__in=[
@@ -70,12 +94,25 @@ class FilterCommunityUnitsMixin(object):
                         user=self.request.user)
                 ])
 
-        if self.request.user.sub_county:
-            self.queryset = self.queryset.filter(
-                facility__ward__sub_county__in=[
-                    us.sub_county for us in UserSubCounty.objects.filter(
-                        user=self.request.user)
-                ])
+        
+    
+    def get_queryset(self, *args, **kwargs):
+        custom_queryset = kwargs.pop('custom_queryset', None)
+        if hasattr(custom_queryset, 'count'):
+            self.queryset = custom_queryset
+
+        self.filter_for_county_users()
+        self.filter_for_consituency_users()  
+        self.filter_for_sub_county_users()
+        self.filter_rejected_chus()
+
+        # if not self.request.user.has_perm(
+        #         "facilities.view_unpublished_facilities"):
+        #     self.queryset = self.queryset.filter(facility__approved=True)
+
+        # if not self.request.user.has_perm(
+        #         "chul.view_rejected_chus"):
+        #     self.queryset = self.queryset.filter(is_approved=True)
 
         return self.queryset
 
@@ -84,17 +121,18 @@ class FilterCommunityUnitsMixin(object):
         Overridden in order to constrain search results to what a user should
         see.
         """
-        if 'search' in self.request.query_params:
-            search_term = self.request.query_params.get('search')
-            if search_term.isdigit():
-                queryset = self.queryset.filter(code=search_term)
-            else:
-                queryset = super(
-                    FilterCommunityUnitsMixin, self).filter_queryset(queryset)
-        else:
-            queryset = super(
-                FilterCommunityUnitsMixin, self).filter_queryset(queryset)
+        # if 'search' in self.request.query_params:
+        #     search_term = self.request.query_params.get('search')
+        #     if search_term.isdigit():
+        #         queryset = self.queryset.filter(code=search_term)
+        #     else:
+        #         queryset = super(
+        #             FilterCommunityUnitsMixin, self).filter_queryset(queryset)
+        # else:
+        #     queryset = super(
+        #         FilterCommunityUnitsMixin, self).filter_queryset(queryset)
 
+        queryset = super(FilterCommunityUnitsMixin, self).filter_queryset(queryset)
         return self.get_queryset(custom_queryset=queryset)
 
 
@@ -176,6 +214,7 @@ class CommunityHealthUnitContactListView(generics.ListCreateAPIView):
     ordering_fields = ('health_unit', 'contact', )
 
 
+
 class CommunityHealthUnitContactDetailView(
         AuditableDetailViewMixin,
         generics.RetrieveUpdateDestroyAPIView):
@@ -214,6 +253,20 @@ class CommunityHealthUnitDetailView(
     """
     queryset = CommunityHealthUnit.objects.all()
     serializer_class = CommunityHealthUnitSerializer
+
+class CommunityHealthUnitSummaryView(generics.ListAPIView):
+    def get_queryset(self):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT chul_status.name, COUNT(chul_communityhealthunit.status_id) As counts FROM chul_communityhealthunit INNER JOIN chul_status ON chul_communityhealthunit.status_id = chul_status.id GROUP BY chul_status.name")
+            rows = cursor.fetchall()
+            return rows
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        data = []
+        for row in queryset:
+            data.append({"name": row[0], "count": row[1]})
+        return JsonResponse(data, safe=False)
 
 
 class CommunityHealthWorkerListView(generics.ListCreateAPIView):
@@ -312,6 +365,7 @@ class ChuUpdateBufferListView(
     serializer_class = ChuUpdateBufferSerializer
     filter_class = ChuUpdateBufferFilter
     ordering_fields = ('health_unit', )
+    # print(queryset)
 
 
 class ChuUpdateBufferDetailView(
