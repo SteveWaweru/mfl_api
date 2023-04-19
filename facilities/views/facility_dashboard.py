@@ -62,7 +62,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
         return CommunityHealthUnit.objects.filter(
             facility__ward=ward).count()
 
-    def get_facility_county_summary(self):
+    def get_facility_county_summary(self, cty):
         if not self.request.query_params.get('county'):
             counties = County.objects.all()
             if not self.request.user.is_national:
@@ -624,46 +624,34 @@ class DashBoard(QuerysetFilterMixin, APIView):
     def get(self, *args, **kwargs):
       
         user = self.request.user
+        
         county_ = user.county
         
         if not self.request.query_params.get('county'):
             county_ = user.county
         else:
             county_ = County.objects.get(id=self.request.query_params.get('county'))
-        if not county_ and not self.request.query_params.get('sub_county'):
-            
+        
+        if not county_:
             total_facilities = self.get_queryset().count()
-        else:
-            if not self.request.query_params.get('ward'):
-                
-                total_facilities = self.get_queryset().filter(
-                    ward__sub_county__county=county_, sub_county=self.request.query_params.get('sub_county')).count()
-            else:
-                
-                total_facilities = self.get_queryset().filter(
-                    ward__sub_county__county=county_, ward=self.request.query_params.get('ward')).count()
-
-        if not county_ and not self.request.query_params.get('sub_county'):
             total_chus = CommunityHealthUnit.objects.filter(
                 facility__in=self.get_queryset()).count()
         else:
-            if not self.request.query_params.get('ward'):
-                total_chus = CommunityHealthUnit.objects.filter(
-                    facility__in=self.get_queryset().filter(
-                    ward__sub_county__county=county_, sub_county=self.request.query_params.get('sub_county'))).count()
-            else:
-                total_chus = CommunityHealthUnit.objects.filter(
-                    facility__in=self.get_queryset().filter(
-                    ward__sub_county__county=county_, ward=self.request.query_params.get('ward'))).count()
+            total_facilities = self.get_queryset().filter(
+                ward__sub_county__county=county_).count()
+            total_chus = CommunityHealthUnit.objects.filter(
+                facility__in=self.get_queryset().filter(
+                ward__sub_county__county=county_)).count()
+        
         data = {
             "keph_level" : self.get_facilities_kephlevel_count(county_),
             "total_facilities": total_facilities,
-            "county_summary": self.get_facility_county_summary()
-            if user.is_national else [],
-            "constituencies_summary": self.get_facility_constituency_summary(),
-            # if user.county and not user.sub_county else [],
-            "wards_summary": self.get_facility_ward_summary(),
-            # if user.sub_county else [],
+            "county_summary": self.get_facility_county_summary(None)
+            if user.is_national else self.get_facility_county_summary(county_),
+            "constituencies_summary": self.get_facility_constituency_summary()
+            if user.county and not user.sub_county else [],
+            "wards_summary": self.get_facility_ward_summary()
+            if user.sub_county else [],
             "owners_summary": self.get_facility_owner_summary(county_),
             "types_summary": self.get_facility_type_summary(county_),
             "status_summary": self.get_facility_status_summary(county_),
