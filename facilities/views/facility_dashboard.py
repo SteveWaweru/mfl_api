@@ -8,7 +8,7 @@ from django.db import connection
 
 from rest_framework.views import APIView, Response
 from common.models import County, SubCounty, Ward
-from chul.models import CommunityHealthUnit
+from chul.models import (CommunityHealthUnit, Status)
 
 from ..models import (
     OwnerType,
@@ -466,6 +466,33 @@ class DashBoard(QuerysetFilterMixin, APIView):
             list(set (list(newly_created)))
         )
 
+    def facilities_pending_validation_count(self, cty): 
+
+        if not cty and not self.request.query_params.get('sub_county'):
+            keph_array = []
+            updated_pending_validation = self.get_queryset().filter(has_edits=True,  rejected=False).count()
+            new_pending_validation = self.queryset.filter(has_edits=False, approved=None, rejected=False).count()
+
+            keph_array.append({"name": "Updated facilities pending validation", "count": updated_pending_validation})
+            keph_array.append({"name": "New facilities pending validation", "count": new_pending_validation})       
+        else:
+            if not self.request.query_params.get('ward'):
+                keph_array = []
+                updated_pending_validation = self.get_queryset().filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), has_edits=True,  rejected=False).count()
+                new_pending_validation = self.queryset.filter(
+                    ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'), has_edits=False, approved=None, rejected=False).count()
+                keph_array.append({"name": "Updated facilities pending validation", "count": updated_pending_validation})
+                keph_array.append({"name": "New facilities pending validation", "count": new_pending_validation})
+            else:
+                keph_array=[]
+                updated_pending_validation = self.get_queryset().filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), has_edits=True,  rejected=False).count()
+                new_pending_validation = self.queryset.filter(
+                    ward__sub_county__county=cty, ward=self.request.query_params.get('ward'), has_edits=False, approved=None, rejected=False).count()
+                keph_array.append({"name": "Updated facilities pending validation", "count": updated_pending_validation})
+                keph_array.append({"name": "New facilities pending validation", "count": new_pending_validation})        
+        return keph_array
 
     def get_facilities_approved_count(self,cty):
         if not cty and not self.request.query_params.get('sub_county'):
@@ -540,27 +567,59 @@ class DashBoard(QuerysetFilterMixin, APIView):
                 return self.get_queryset().filter(closed=True, ward__sub_county__county=cty, ward=self.request.query_params.get('ward')).count()
 
 
-    def get_facilities_kephlevel_count(self,county_name):
+    def get_facilities_kephlevel_count(self,cty):
         """
         Function to get facilities by keph level
         """
-        if county_name:
+        if not cty and not self.request.query_params.get('sub_county'):
             keph_level = KephLevel.objects.values("id", "name")  
             keph_array = []
             for keph in keph_level:
-                keph_count = Facility.objects.filter(keph_level_id=keph.get("id"),ward__sub_county__county=county_name ).count()
+                keph_count = self.get_queryset().filter(keph_level_id=keph.get("id")).count()
                 keph_array.append({"name" : keph.get("name"), "count" : keph_count})
             return keph_array
-
         else:
-            keph_level = KephLevel.objects.values("id", "name")  
-            keph_array = []
-            for keph in keph_level:
-                keph_count = Facility.objects.filter(keph_level_id=keph.get("id")).count()
-                keph_array.append({"name" : keph.get("name"), "count" : keph_count})
-
-            return keph_array
+            if not self.request.query_params.get('ward'):
+                keph_level = KephLevel.objects.values("id", "name")  
+                keph_array = []
+                for keph in keph_level:
+                    keph_count = self.get_queryset().filter(Q(keph_level_id=keph.get("id"),ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'))).count()
+                    keph_array.append({"name" : keph.get("name"), "count" : keph_count})
+                return keph_array
+            else:
+                keph_level = KephLevel.objects.values("id", "name") 
+                keph_array = []
+                for keph in keph_level:
+                    keph_count = self.get_queryset().filter(Q(keph_level_id=keph.get("id"),ward__sub_county__county=cty, ward=self.request.query_params.get('ward'))).count()
+                    keph_array.append({"name" : keph.get("name"), "count" : keph_count})
+                return keph_array
        
+    def get_chu_summary(self, cty):
+
+        if not cty and not self.request.query_params.get('sub_county'):
+            status = Status.objects.values("id", "name")  
+            status_array = []
+            for st in status:
+                status_count = CommunityHealthUnit.objects.filter(Q(status=st.get('id'))).count()
+                status_array.append({"name" : st.get("name"), "count" : status_count})
+
+            return status_array
+        else:
+            if not self.request.query_params.get('ward'):
+                status = Status.objects.values("id", "name")  
+                status_array = []
+                for st in status:
+                    status_count = CommunityHealthUnit.objects.filter(status = st.get('id'),facility__in=self.get_queryset().filter(ward__sub_county__county=cty, sub_county=self.request.query_params.get('sub_county'))).count()
+                    # status_count = CommunityHealthUnit.objects.filter(Q(status = st.get('id'),facility__ward__sub_county__county=cty, facility__ward__sub_county=self.request.query_params.get('sub_county'))).count()
+                    status_array.append({"name" : st.get("name"), "count" : status_count})
+            else:
+                status = Status.objects.values("id", "name")  
+                status_array = []
+                for st in status:
+                    status_count = CommunityHealthUnit.objects.filter(status = st.get('id'),facility__in=self.get_queryset().filter(ward__sub_county__county=cty, ward=self.request.query_params.get('ward'))).count()
+                    # status_count = CommunityHealthUnit.objects.filter(Q(status = st.get('id'),facility__ward__sub_county__county=cty, facility__ward=self.request.query_params.get('ward'))).count()
+                    status_array.append({"name" : st.get("name"), "count" : status_count})
+            return status_array     
 
     def get(self, *args, **kwargs):
       
@@ -578,7 +637,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
             if not self.request.query_params.get('ward'):
                 
                 total_facilities = self.get_queryset().filter(
-                    ward__sub_county__county=county_, ward__sub_county=self.request.query_params.get('sub_county')).count()
+                    ward__sub_county__county=county_, sub_county=self.request.query_params.get('sub_county')).count()
             else:
                 
                 total_facilities = self.get_queryset().filter(
@@ -591,7 +650,7 @@ class DashBoard(QuerysetFilterMixin, APIView):
             if not self.request.query_params.get('ward'):
                 total_chus = CommunityHealthUnit.objects.filter(
                     facility__in=self.get_queryset().filter(
-                    ward__sub_county__county=county_, ward__sub_county=self.request.query_params.get('sub_county'))).count()
+                    ward__sub_county__county=county_, sub_county=self.request.query_params.get('sub_county'))).count()
             else:
                 total_chus = CommunityHealthUnit.objects.filter(
                     facility__in=self.get_queryset().filter(
@@ -621,6 +680,8 @@ class DashBoard(QuerysetFilterMixin, APIView):
             "facilities_rejected_at_approval":self.facilities_rejected_at_approval(county_),
             "total_chus": total_chus,
             "approved_facilities": self.get_facilities_approved_count(county_),
+            "cu_summary": self.get_chu_summary(county_),
+            "validations": self.facilities_pending_validation_count(county_),
 
 
         }
