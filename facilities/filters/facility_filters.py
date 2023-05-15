@@ -1,4 +1,5 @@
 from django.db.models import Q
+import uuid
 
 from distutils.util import strtobool
 import django_filters
@@ -352,48 +353,40 @@ class FacilityContactFilter(CommonFieldsFilterset):
 class FacilityFilter(CommonFieldsFilterset):
 
     def service_filter(self, qs, name, value):
-        services = value.split(',')
+        service_ids = value.split(',')
         facility_ids = []
 
-        for facility in qs.filter():
-            for _service in services:
-                service_count = FacilityService.objects.filter(
-                    service=_service,
-                    facility=facility).count()
-                if service_count > 0:
-                    facility_ids.append(facility.id)
+        for facility in qs:
+            facility_services = facility.get_facility_services
+            facility_service_ids = [str(service['service_id']) for service in facility_services]
+            if set(service_ids).issubset(facility_service_ids):
+                facility_ids.append(facility.id)
 
-        return qs.filter(id__in=list(set(facility_ids)))
+        return qs.filter(id__in=facility_ids)
 
     def infrastructure_filter(self, qs, name, value):
-        infrastructure = value.split(',')
+        infrastructure_ids = value.split(',')
         facility_ids = []
 
-        for facility in qs.filter():
-            for _infra in infrastructure:
-                infrastructure_count = FacilityInfrastructure.objects.filter(
-                    infrastructure=_infra,
-                    facility=facility).count()
-                if infrastructure_count > 0:
-                    facility_ids.append(facility.id)
+        for facility in qs:
+            facility_infrastructures = facility.get_facility_infrastructure
+            facility_infra_ids = [str(infra['id']) for infra in facility_infrastructures]
+            if set(infrastructure_ids).issubset(facility_infra_ids):
+                facility_ids.append(facility.id)
 
-        return qs.filter(id__in=list(set(facility_ids)))
+        return qs.filter(id__in=facility_ids)
 
-
-    def hr_filter(self, qs, name, value):
-        specialities = value.split(',')
+    def speciality_filter(self, qs, name, value):
+        speciality_ids = value.split(',')
         facility_ids = []
 
-        for facility in qs.filter():
-            for _speciality in specialities:
-                speciality_count = FacilitySpecialist.objects.filter(
-                    speciality=_speciality,
-                    facility=facility).count()
-                if speciality_count > 0:
-                    facility_ids.append(facility.id)
+        for facility in qs:
+            facility_specialities = facility.get_facility_specialities
+            facility_speciality_ids = [str(speciality['id']) for speciality in facility_specialities]
+            if set(speciality_ids).issubset(facility_speciality_ids):
+                facility_ids.append(facility.id)
 
-        return qs.filter(id__in=list(set(facility_ids)))
-
+        return qs.filter(id__in=facility_ids)
     def filter_approved_facilities(self, qs, name, value):
 
         if value in TRUTH_NESS:
