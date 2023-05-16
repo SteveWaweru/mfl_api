@@ -446,6 +446,7 @@ class FacilityListReadOnlyView(QuerysetFilterMixin, generics.ListAPIView):
     """
     queryset = Facility.objects.all()
     serializer_class = FacilityListSerializer
+
     filter_class = FacilityFilter
     ordering_fields = (
         'code', 'name', 'county', 'constituency', 'facility_type_name',

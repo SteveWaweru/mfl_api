@@ -270,6 +270,10 @@ urlpatterns = (
 
     url(r'^facilities_list/$', views.FacilityListReadOnlyView.as_view(),
         name='facilities_read_list'),
+
+    url(r'^facilities_filter_list/(?P<pk>[^/]+)/$', views.FacilityListReadOnlyView.as_view(),
+        name='facilities_filter_list'),
+
     url(r'^facilities/$',
         views.FacilityListView.as_view(), name='facilities_list'),
     url(r'^facilities/(?P<pk>[^/]+)/$', views.FacilityDetailView.as_view(),

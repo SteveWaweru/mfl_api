@@ -45,6 +45,7 @@ apipatterns = (
     url(r'^rest-auth/', include((rest_auth_patterns, None))),
     url(r'^rest-auth/registration/', include('rest_auth.registration.urls',
         namespace='rest_auth_registration'))
+
 )
 
 urlpatterns = (
